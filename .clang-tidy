@@ -1,0 +1,71 @@
+Checks: >
+  -*,
+  clang-analyzer-*,
+  modernize-*,
+  cert-*,
+  cppcoreguidelines-*,
+  bugprone-*,
+  performance-*,
+  readability-*,
+  hicpp-*,
+  misc-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+
+# Only bugprone-* issues break the build. Everything else is a warning.
+WarningsAsErrors: 'bugprone-*'
+
+# Only analyze our own headers, not system or third-party ones.
+HeaderFilterRegex: 'include/omnikit/.*'
+
+CheckOptions:
+  - key: readability-function-size.LineThreshold
+    value: '100'
+
+  # Types (classes, structs, enums): CamelCase   -> LowPassFilter
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+
+  # Functions / methods: camelBack   -> computeAverage()
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+
+  # Local variables: lower_case   -> wheel_speed
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+
+  # Private/protected member variables: lower_case + trailing '_'  -> value_
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+
+  # Compile-time constants: UPPER_CASE   -> MAX_SPEED
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.StaticConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
+
+  # Local const values are NOT compile-time constants -> lower_case
+  - key: readability-identifier-naming.LocalConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstantParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstantMemberCase
+    value: lower_case
+    
+  # Namespaces: lower_case   -> omnikit, math
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case

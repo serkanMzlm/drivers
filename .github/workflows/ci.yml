@@ -1,0 +1,99 @@
+name: C++ Build and Test CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  commit-check:
+    name: Validate Commit Message Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check Commit Message Convention
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          echo "Last Commit Message: $COMMIT_MSG"
+          
+          # Regex: (feat|fix|update|docs|style|refactor|test|chore): Message
+          REGEX="^(feat|fix|update|docs|style|refactor|test|chore): .+"
+          
+          if [[ ! "$COMMIT_MSG" =~ $REGEX ]]; then
+            echo "::error::Invalid Commit Message Format!"
+            echo "Commit message must follow the '<type>: <description>' format."
+            echo "Examples: 'update: math library', 'fix: vector index overflow', 'feat: add low pass filter'"
+            exit 1
+          else
+            echo "Commit message format is valid."
+          fi
+  naming-check:
+    name: Check File Naming Convention
+    runs-on: ubuntu-latest
+    needs: commit-check
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Check File Naming (lower_snake_case)
+        run: |
+          echo "Checking .cpp and .hpp file names for lower_snake_case format..."
+          INVALID_FILES=()
+
+          while IFS= read -r file; do
+            filename=$(basename "$file")
+            if [[ ! "$filename" =~ ^[a-z0-9_]+\.(cpp|hpp)$ ]]; then
+              INVALID_FILES+=("$file")
+            fi
+          done < <(find . -type f \( -name "*.cpp" -o -name "*.hpp" \) ! -path "*/build/*" ! -path "*/.git/*")
+
+          if [ ${#INVALID_FILES[@]} -ne 0 ]; then
+            echo "::error::The following C++ files do not follow lower_snake_case naming convention:"
+            for f in "${INVALID_FILES[@]}"; do
+              echo "  - $f"
+            done
+            exit 1
+          else
+            echo "All .cpp and .hpp file names follow lower_snake_case convention."
+          fi
+          
+  quality-check:
+    name: Code Quality & Format
+    needs: naming-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libeigen3-dev clang-format clang-tidy
+
+      - name: Run Quality Checks
+        run: make quality
+
+  build-check:
+    name: Build Project
+    needs: quality-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libeigen3-dev
+
+      - name: Build Code
+        run: make build
+
+      - name: Run Tests
+        run: make test
+        

@@ -1,0 +1,20 @@
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+NamespaceIndentation: None
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Inline
+
+ColumnLimit: 100
+PointerAlignment: Left
+
+BreakBeforeBraces: Attach
+SortIncludes: true
+IncludeBlocks: Regroup
+
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+Standard: c++17
