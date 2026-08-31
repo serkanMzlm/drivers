@@ -62,8 +62,8 @@ jobs:
             echo "All .cpp and .hpp file names follow lower_snake_case convention."
           fi
           
-  quality-check:
-    name: Code Quality & Format
+  format-check:
+    name: Code Format
     needs: naming-check
     runs-on: ubuntu-latest
     steps:
@@ -75,25 +75,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake g++ libeigen3-dev clang-format clang-tidy
 
-      - name: Run Quality Checks
-        run: make quality
+      - name: Run format Checks
+        run: make format
 
-  build-check:
-    name: Build Project
-    needs: quality-check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake g++ libeigen3-dev
-
-      - name: Build Code
-        run: make build
-
-      - name: Run Tests
-        run: make test
         

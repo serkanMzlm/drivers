@@ -1,9 +1,7 @@
 add_library(drivers_comms
     i2c_transport.cpp
     spi_transport.cpp
-    tcp_transport.cpp
     uart_transport.cpp
-    udp_transport.cpp
 )
 
 add_library(drivers::comms ALIAS drivers_comms)
