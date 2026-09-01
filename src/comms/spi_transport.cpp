@@ -1,5 +1,7 @@
 #include "drivers/comms/spi_transport.hpp"
 
+#include "posix_device.hpp"
+
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -33,21 +35,20 @@ bool SPI::init() {
 
     const std::string path = devicePath();
 
-    fd_ = ::open(path.c_str(), O_RDWR | O_CLOEXEC);
+    fd_ = detail::openCharDevice(path, O_RDWR);
     if (fd_ < 0) {
         std::cerr << "SPI: failed to open device " << path << ": " << std::strerror(errno) << "\n";
         return false;
     }
 
-    if (!applyConfig()) {
-        ::close(fd_);
-        fd_ = -1;
+    if (!applyConfigLocked()) {
+        closeLocked();
         return false;
     }
     return true;
 }
 
-bool SPI::applyConfig() {
+bool SPI::applyConfigLocked() {
     if (fd_ < 0)
         return false;
 
@@ -85,31 +86,24 @@ bool SPI::connect() {
         return false;
     }
 
-    return applyConfig();
+    return applyConfigLocked();
 }
 
-void SPI::disconnect() {
-    std::lock_guard<std::mutex> lk(mtx_);
+void SPI::closeLocked() {
     if (fd_ >= 0) {
         ::close(fd_);
         fd_ = -1;
     }
 }
 
+void SPI::disconnect() {
+    std::lock_guard<std::mutex> lk(mtx_);
+    closeLocked();
+}
+
 bool SPI::isConnected() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return fd_ >= 0;
-}
-
-
-void SPI::setTimeout(uint32_t milliseconds) {
-    std::lock_guard<std::mutex> lk(mtx_);
-
-    if (milliseconds < MIN_TIMEOUT)
-        milliseconds = MIN_TIMEOUT;
-    if (milliseconds > MAX_TIMEOUT)
-        milliseconds = MAX_TIMEOUT;
-    timeout_ = milliseconds;
 }
 
 bool SPI::transfer(const uint8_t* tx, uint8_t* rx, size_t length) {
@@ -153,32 +147,12 @@ bool SPI::receive(uint8_t* buffer, size_t length) {
     return transfer(nullptr, buffer, length);
 }
 
-bool SPI::write(uint8_t* byte) {
-    if (byte == nullptr)
-        return false;
-
-    return transfer(nullptr, byte, 1);
-}
-
-bool SPI::read(uint8_t* byte) {
-    if (byte == nullptr)
-        return false;
-
-    return transfer(nullptr, byte, 1);
-}
-
 bool SPI::writeRegister(uint8_t reg, uint8_t value) {
-    if (fd_ < 0)
-        return false;
-
     const uint8_t tx[2] = {static_cast<uint8_t>(reg & 0x7F), value};
     return transfer(tx, nullptr, sizeof(tx));
 }
 
 std::optional<uint8_t> SPI::readRegister(uint8_t reg) {
-    if (fd_ < 0)
-        return std::nullopt;
-
     const uint8_t tx[2] = {static_cast<uint8_t>(reg | 0x80), 0x00};
     uint8_t rx[2] = {0, 0};
 
@@ -200,9 +174,10 @@ bool SPI::setMode(uint8_t mode) {
     const SpiConfig previous = config_;
     config_ = *next;
 
-    if (fd_ >= 0 && !applyConfig()) {
+    if (fd_ >= 0 && !applyConfigLocked()) {
         config_ = previous;
-        applyConfig();
+        if (!applyConfigLocked())
+            std::cerr << "SPI: rollback to previous config also failed\n";
         return false;
     }
     return true;
@@ -220,9 +195,10 @@ bool SPI::setSpeed(uint32_t speed_hz) {
     const SpiConfig previous = config_;
     config_ = *next;
 
-    if (fd_ >= 0 && !applyConfig()) {
+    if (fd_ >= 0 && !applyConfigLocked()) {
         config_ = previous;
-        applyConfig();
+        if (!applyConfigLocked())
+            std::cerr << "SPI: rollback to previous config also failed\n";
         return false;
     }
     return true;
@@ -240,9 +216,10 @@ bool SPI::setBitsPerWord(uint8_t bits) {
     const SpiConfig previous = config_;
     config_ = *next;
 
-    if (fd_ >= 0 && !applyConfig()) {
+    if (fd_ >= 0 && !applyConfigLocked()) {
         config_ = previous;
-        applyConfig();
+        if (!applyConfigLocked())
+            std::cerr << "SPI: rollback to previous config also failed\n";
         return false;
     }
     return true;
@@ -258,9 +235,10 @@ bool SPI::setBitOrder(bool lsb_first) {
     const SpiConfig previous = config_;
     config_ = *next;
 
-    if (fd_ >= 0 && !applyConfig()) {
+    if (fd_ >= 0 && !applyConfigLocked()) {
         config_ = previous;
-        applyConfig();
+        if (!applyConfigLocked())
+            std::cerr << "SPI: rollback to previous config also failed\n";
         return false;
     }
     return true;

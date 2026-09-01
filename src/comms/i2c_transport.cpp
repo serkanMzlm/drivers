@@ -1,5 +1,7 @@
 #include "drivers/comms/i2c_transport.hpp"
 
+#include "posix_device.hpp"
+
 extern "C" {
 #include <fcntl.h>
 #include <i2c/smbus.h>
@@ -17,9 +19,7 @@ using namespace drivers::comms;
 
 I2C::I2C(uint8_t bus_number) : bus_number_(bus_number) {}
 
-I2C::I2C(uint8_t bus_number, const uint8_t address) : bus_number_(bus_number) {
-    setAddress(address);
-}
+I2C::I2C(uint8_t bus_number, const I2CConfig& config) : bus_number_(bus_number), target_(config) {}
 
 I2C::~I2C() {
     disconnect();
@@ -30,22 +30,26 @@ std::string I2C::devicePath() const {
 }
 
 bool I2C::setAddress(uint16_t address) {
-    auto addr = I2CAddress::make(address);
-    if (!addr) {
+    auto next = I2CConfig::make(address);
+    if (!next) {
         std::cerr << "I2C: invalid address 0x" << std::hex << address << std::dec << "\n";
         return false;
     }
 
     std::lock_guard<std::mutex> lk(mtx_);
-    target_ = std::move(addr);
+    const std::optional<I2CConfig> previous = target_;
+    target_ = next;
 
-    if (fd_ > 0)
-        return applyAddress();
-
+    if (fd_ >= 0 && !applyAddressLocked()) {
+        target_ = previous;
+        if (previous && !applyAddressLocked())
+            std::cerr << "I2C: rollback to previous address also failed\n";
+        return false;
+    }
     return true;
 }
 
-bool I2C::applyAddress() {
+bool I2C::applyAddressLocked() {
     if (fd_ < 0 || !target_)
         return false;
 
@@ -66,12 +70,12 @@ bool I2C::applyAddress() {
 bool I2C::init() {
     std::lock_guard<std::mutex> lk(mtx_);
 
-    if (fd_ > 0)
+    if (fd_ >= 0)
         return true;
 
     const std::string path = devicePath();
 
-    fd_ = ::open(path.c_str(), O_RDWR | O_CLOEXEC);
+    fd_ = detail::openCharDevice(path, O_RDWR);
     if (fd_ < 0) {
         std::cerr << "I2C: failed to open bus " << path << ": " << std::strerror(errno) << "\n";
         return false;
@@ -101,39 +105,24 @@ bool I2C::connect() {
         return false;
     }
 
-    return applyAddress();
+    return applyAddressLocked();
 }
 
-void I2C::disconnect() {
-    std::lock_guard<std::mutex> lk(mtx_);
-
+void I2C::closeLocked() {
     if (fd_ >= 0) {
         ::close(fd_);
         fd_ = -1;
     }
 }
 
+void I2C::disconnect() {
+    std::lock_guard<std::mutex> lk(mtx_);
+    closeLocked();
+}
+
 bool I2C::isConnected() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return fd_ >= 0 && target_.has_value();
-}
-
-void I2C::setTimeout(uint32_t milliseconds) {
-    std::lock_guard<std::mutex> lk(mtx_);
-
-    if (milliseconds < MIN_TIMEOUT)
-        milliseconds = MIN_TIMEOUT;
-    if (milliseconds > MAX_TIMEOUT)
-        milliseconds = MAX_TIMEOUT;
-    timeout_ = milliseconds;
-
-    if (fd_ >= 0) {
-        unsigned long units = timeout_ / 10;
-        if (units == 0)
-            units = 1;
-        if (ioctl(fd_, I2C_TIMEOUT, units) < 0)
-            std::cerr << "I2C: failed to set timeout: " << std::strerror(errno) << "\n";
-    }
 }
 
 void I2C::send(const uint8_t* data, size_t length) {
@@ -159,24 +148,6 @@ bool I2C::receive(uint8_t* buffer, size_t length) {
         return false;
     }
     return true;
-}
-
-bool I2C::write(uint8_t* byte) {
-    std::lock_guard<std::mutex> lk(mtx_);
-
-    if (fd_ < 0 || byte == nullptr)
-        return false;
-
-    return ::write(fd_, byte, 1) == 1;
-}
-
-bool I2C::read(uint8_t* byte) {
-    std::lock_guard<std::mutex> lk(mtx_);
-
-    if (fd_ < 0 || byte == nullptr)
-        return false;
-
-    return ::read(fd_, byte, 1) == 1;
 }
 
 bool I2C::writeRegister(uint8_t reg, uint8_t value) {

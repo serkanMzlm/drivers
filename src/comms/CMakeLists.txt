@@ -12,9 +12,9 @@ target_include_directories(drivers_comms
         $<INSTALL_INTERFACE:include>
 )
 
-# target_link_libraries(drivers_comms
-#     PUBLIC drivers::math
-# )
+target_link_libraries(drivers_comms
+    PRIVATE i2c
+)
 
 target_compile_features(drivers_comms PUBLIC cxx_std_17)
 

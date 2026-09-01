@@ -11,6 +11,7 @@
 
 namespace drivers::comms {
 
+/// Immutable, validated UART line configuration.
 class UartConfig {
 public:
     enum class Parity : uint8_t { None, Even, Odd };
@@ -20,6 +21,7 @@ public:
         return UartConfig{115200, 8, Parity::None, StopBits::One};
     }
 
+    /// Validates and builds a config; returns std::nullopt on invalid input.
     static std::optional<UartConfig> make(uint32_t baud, uint8_t data_bits, Parity parity,
                                           StopBits stop_bits) noexcept {
         if (!isSupportedBaud(baud))
@@ -43,17 +45,18 @@ public:
     }
 
     uint32_t baud() const noexcept { return baud_; }
+    uint8_t dataBits() const noexcept { return data_bits_; }
+    Parity parity() const noexcept { return parity_; }
+    StopBits stopBits() const noexcept { return stop_bits_; }
+
+    /// Maps the configured baud rate to its termios `speed_t` constant.
     speed_t toTermiosBaud() const noexcept {
         for (const auto& [b, s] : kBaudMap) {
             if (baud_ == b)
                 return s;
         }
-
         return B0;
     }
-    uint8_t dataBits() const noexcept { return data_bits_; }
-    Parity parity() const noexcept { return parity_; }
-    StopBits stopBits() const noexcept { return stop_bits_; }
 
     static bool isSupportedBaud(uint32_t baud) noexcept {
         for (const auto& [b, s] : kBaudMap) {
@@ -79,6 +82,8 @@ private:
     StopBits stop_bits_;
 };
 
+/// POSIX termios-backed UART transport. Thread-safe: every public method
+/// (bar the constructors) takes `mtx_` for its full duration.
 class UART : public ITransport {
 public:
     explicit UART(std::string device_path)
@@ -86,7 +91,7 @@ public:
 
     UART(std::string device_path, const UartConfig& config)
         : device_path_(std::move(device_path)), config_(config) {}
-        
+
     ~UART() override { disconnect(); }
 
     bool init() override;
@@ -94,20 +99,21 @@ public:
     void disconnect() override;
     bool isConnected() const override;
 
-    void setTimeout(uint32_t milliseconds) override;
-
     void send(const uint8_t* data, size_t length) override;
     bool receive(uint8_t* buffer, size_t length) override;
-    bool write(uint8_t* byte) override;
-    bool read(uint8_t* byte) override;
 
+    /// Validates, applies, and (on hardware rejection) rolls back a single
+    /// config field. No-op on the live device until `init()` has been called.
     bool setBaud(uint32_t baud);
     bool setParity(UartConfig::Parity parity);
     bool setStopBits(UartConfig::StopBits stop_bits);
     bool setDataBits(uint8_t data_bits);
 
 private:
-    bool applyConfig();
+    /// Pushes `config_` to the open fd via termios. Caller must hold `mtx_`.
+    bool applyConfigLocked();
+    /// Closes `fd_` if open and resets it to -1. Caller must hold `mtx_`.
+    void closeLocked();
 
     std::string device_path_;
     UartConfig config_;
